@@ -2,6 +2,9 @@
 
 Récepteur AirPlay pour Windows : [UxPlay](https://github.com/FDH2/UxPlay) compilé **sans Bonjour**
 (mDNS interne d'UxPlay ≥ 1.74), avec GStreamer embarqué, et une icône dans la barre des tâches.
+Mode **son uniquement** : le son de l'iPad/iPhone sort sur le PC, synchronisé avec l'image de l'iPad.
+
+Sur l'iPad : Centre de contrôle → icône AirPlay de la carte audio → choisir le PC (pas « Recopie de l'écran »).
 
 ## Construire
 Pousser ce dossier sur GitHub, puis **Actions → Build Windows → Run workflow**
@@ -10,8 +13,8 @@ Pousser ce dossier sur GitHub, puis **Actions → Build Windows → Run workflow
 ## Utiliser
 - L'installeur ajoute une règle de pare-feu (réseaux **privés** uniquement) et lance l'app.
 - Clic droit sur l'icône :
-  - **Décalage du son** : si l'image arrive après le son, choisir « Retarder le son » (option `-vsync <ms>`).
-  - **Désactiver la synchro** (`-vsync no`) : pas d'images sautées, mais le son peut se décaler.
+  - **Décalage du son** : réglage fin si le son du PC n'est pas calé sur l'image de l'iPad (option `-async <ms>`).
+  - **Latence minimale** (`-async no`) : pause/changement de piste plus réactifs, mais son plus calé sur l'image de l'iPad.
   - **Lancer au démarrage de Windows**, **Redémarrer**, **Ouvrir le journal**, **Quitter**.
 - Icône verte = UxPlay tourne, grise = arrêté (voir le journal).
 

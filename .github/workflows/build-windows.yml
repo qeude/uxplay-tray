@@ -99,7 +99,7 @@ jobs:
           $env:GST_PLUGIN_SYSTEM_PATH_1_0 = "$root\lib\gstreamer-1.0"
           $env:GST_PLUGIN_SCANNER_1_0 = "$root\libexec\gstreamer-1.0\gst-plugin-scanner.exe"
           $env:GST_REGISTRY_1_0 = "$env:RUNNER_TEMP\gst-registry.bin"
-          $p = Start-Process "$root\bin\uxplay.exe" -ArgumentList "-n","CITest","-vs","fakesink","-as","fakesink","-d" `
+          $p = Start-Process "$root\bin\uxplay.exe" -ArgumentList "-n","CITest","-vs","0","-async","-as","fakesink","-d" `
                  -RedirectStandardOutput uxplay-out.txt -RedirectStandardError uxplay-err.txt -PassThru -NoNewWindow
           Start-Sleep 5
           python -m pip install --quiet zeroconf

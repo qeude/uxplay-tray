@@ -49,7 +49,7 @@ static class UxPlayTray
                 delayMenu.DropDownItems.Add(item);
             }
             delayMenu.DropDownItems.Add(new ToolStripSeparator());
-            noSync = new ToolStripMenuItem("Désactiver la synchro son/image (-vsync no)");
+            noSync = new ToolStripMenuItem("Latence minimale, sans synchro avec l'iPad (-async no)");
             noSync.Click += delegate { SetSetting("NoSync", noSync.Checked ? 0 : 1); Restart(); };
             delayMenu.DropDownItems.Add(noSync);
             menu.Items.Add(delayMenu);
@@ -78,9 +78,10 @@ static class UxPlayTray
 
     static string BuildArgs()
     {
-        if (GetSetting("NoSync", 0) == 1) return "-vsync no";
+        // Audio only: no video window; -async makes the iPad delay its picture to match the PC's sound.
+        if (GetSetting("NoSync", 0) == 1) return "-vs 0 -async no";
         int delay = GetSetting("DelayMs", 0);
-        return delay == 0 ? "" : "-vsync " + delay;
+        return "-vs 0 -async" + (delay == 0 ? "" : " " + delay);
     }
 
     static void Start()
