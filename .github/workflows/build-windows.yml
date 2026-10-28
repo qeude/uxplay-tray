@@ -1,0 +1,114 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      uxplay_ref:
+        description: "FDH2/UxPlay branch, tag or commit"
+        default: master
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-libplist
+            mingw-w64-ucrt-x86_64-gstreamer
+            mingw-w64-ucrt-x86_64-gst-plugins-base
+            mingw-w64-ucrt-x86_64-gst-plugins-good
+            mingw-w64-ucrt-x86_64-gst-plugins-bad
+            mingw-w64-ucrt-x86_64-gst-libav
+
+      - name: Build UxPlay (internal mDNS, no Bonjour)
+        run: |
+          git clone https://github.com/FDH2/UxPlay.git uxplay-src
+          git -C uxplay-src checkout "${{ inputs.uxplay_ref || 'master' }}"
+          # No -DUSE_DNS_SD: on Windows this selects UxPlay's own lib/mdnsd instead of Bonjour.
+          cmake -S uxplay-src -B uxplay-build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build uxplay-build
+          # Fail if the binary still depends on Bonjour.
+          ! objdump -p uxplay-build/uxplay.exe | grep -qi dnssd.dll
+
+      - name: Bundle UxPlay + GStreamer
+        run: |
+          ./bundle.sh uxplay-build/uxplay.exe dist/uxplay
+          cp uxplay-src/LICENSE dist/uxplay/LICENSE-UxPlay.txt
+
+      - name: Build tray app
+        shell: pwsh
+        run: |
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /codepage:65001 /target:winexe /optimize `
+            /out:dist\UxPlayTray.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll tray\UxPlayTray.cs
+          if ($LASTEXITCODE) { exit 1 }
+
+      - name: Smoke test bundle outside MSYS2
+        shell: pwsh
+        run: |
+          $root = "$PWD\dist\uxplay"
+          $env:PATH = "$root\bin;C:\Windows\System32"
+          $env:GST_PLUGIN_SYSTEM_PATH_1_0 = "$root\lib\gstreamer-1.0"
+          $env:GST_PLUGIN_SCANNER_1_0 = "$root\libexec\gstreamer-1.0\gst-plugin-scanner.exe"
+          $env:GST_REGISTRY_1_0 = "$env:RUNNER_TEMP\gst-registry.bin"
+          & "$root\bin\uxplay.exe" -h | Select-Object -First 3
+          foreach ($e in "appsrc","h264parse","h265parse","avdec_h264","avdec_aac","avdec_alac","aacparse",
+                         "videoconvert","audioconvert","audioresample","volume","autovideosink","autoaudiosink",
+                         "d3d11videosink","wasapisink","decodebin","playbin","jpegdec","queue") {
+            & "$root\bin\gst-inspect-1.0.exe" --exists $e
+            if ($LASTEXITCODE) { Write-Error "missing GStreamer element: $e"; exit 1 }
+          }
+
+      - name: Runtime test - UxPlay is discoverable without Bonjour
+        shell: pwsh
+        run: |
+          if (Get-Service -Name "Bonjour Service" -ErrorAction SilentlyContinue) { Write-Error "Bonjour present on runner, test would be meaningless"; exit 1 }
+          $root = "$PWD\dist\uxplay"
+          $env:PATH = "$root\bin;$env:PATH"
+          $env:GST_PLUGIN_SYSTEM_PATH_1_0 = "$root\lib\gstreamer-1.0"
+          $env:GST_PLUGIN_SCANNER_1_0 = "$root\libexec\gstreamer-1.0\gst-plugin-scanner.exe"
+          $env:GST_REGISTRY_1_0 = "$env:RUNNER_TEMP\gst-registry.bin"
+          $p = Start-Process "$root\bin\uxplay.exe" -ArgumentList "-n","CITest","-vs","fakesink","-as","fakesink","-d" `
+                 -RedirectStandardOutput uxplay-out.txt -RedirectStandardError uxplay-err.txt -PassThru -NoNewWindow
+          Start-Sleep 5
+          python -m pip install --quiet zeroconf
+          python ci/check_mdns.py CITest
+          $rc = $LASTEXITCODE
+          if ($p.HasExited) { Write-Host "uxplay exited early with code $($p.ExitCode)"; $rc = 1 } else { Stop-Process $p.Id }
+          Get-Content uxplay-out.txt, uxplay-err.txt -ErrorAction SilentlyContinue | Select-Object -Last 60
+          exit $rc
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Qp installer.iss
+          if ($LASTEXITCODE) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UxPlayTray
+          path: |
+            Output/UxPlayTray-Setup.exe
+            dist/
+
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Output/UxPlayTray-Setup.exe
