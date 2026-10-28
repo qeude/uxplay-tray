@@ -17,4 +17,4 @@ Pousser ce dossier sur GitHub, puis **Actions → Build Windows → Run workflow
 
 Si l'iPhone ne voit pas le PC : réseau Windows en « Privé », même Wi-Fi, pas d'isolation client sur la box.
 
-Licence : UxPlay est sous GPLv3 ; le code source est sur https://github.com/FDH2/UxPlay.
+Licence : GPLv3 (comme UxPlay). Chaque build inclut les licences, la liste des paquets embarqués (`SOURCES.txt`) et le code source exact d'UxPlay.

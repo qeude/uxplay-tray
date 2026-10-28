@@ -51,6 +51,20 @@ jobs:
         run: |
           ./bundle.sh uxplay-build/uxplay.exe dist/uxplay
           cp uxplay-src/LICENSE dist/uxplay/LICENSE-UxPlay.txt
+          # GPL/LGPL: ship the licenses, the exact UxPlay source, and where every bundled MSYS2 package's source lives.
+          commit=$(git -C uxplay-src rev-parse HEAD)
+          git -C uxplay-src archive --format=tar.gz --prefix=UxPlay-$commit/ -o ../UxPlay-source.tar.gz HEAD
+          pkgs=$(find dist/uxplay -type f \( -name '*.dll' -o -name '*.exe' \) ! -name uxplay.exe -printf '%f\n' \
+                 | while read -r f; do pacman -Qqo "$(find $MINGW_PREFIX -name "$f" -print -quit)"; done | sort -u)
+          mkdir -p dist/uxplay/licenses
+          for p in $pkgs; do [[ -d $MINGW_PREFIX/share/licenses/${p#mingw-w64-ucrt-x86_64-} ]] && cp -r "$MINGW_PREFIX/share/licenses/${p#mingw-w64-ucrt-x86_64-}" dist/uxplay/licenses/ || true; done
+          {
+            echo "UxPlay (GPLv3): https://github.com/FDH2/UxPlay/tree/$commit (source also in UxPlay-source.tar.gz on the release page)"
+            echo
+            echo "Bundled MSYS2 packages (sources: https://repo.msys2.org/mingw/sources/ and https://github.com/msys2/MINGW-packages):"
+            pacman -Q $pkgs
+          } > dist/uxplay/SOURCES.txt
+          cat dist/uxplay/SOURCES.txt
 
       - name: Build tray app
         shell: pwsh
@@ -107,8 +121,11 @@ jobs:
           path: |
             Output/UxPlayTray-Setup.exe
             dist/
+            UxPlay-source.tar.gz
 
       - if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: Output/UxPlayTray-Setup.exe
+          files: |
+            Output/UxPlayTray-Setup.exe
+            UxPlay-source.tar.gz
