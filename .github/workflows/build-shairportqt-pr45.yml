@@ -1,0 +1,76 @@
+name: Build ShairportQt PR 45 (AirPlay 2, test build)
+
+# Test build of https://github.com/Frank-Friemel/ShairportQt/pull/45 for Windows x64:
+# dynamic Qt (official MSVC build) + vcpkg static libs on the shared CRT, as the ShairportQt README describes.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "adrientoub/ShairportQt commit (PR 45 head)"
+        default: 111822e11901e06db13ab4685313299b8992773b
+
+env:
+  TRIPLET: x64-windows-static-md
+  VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-cache
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: adrientoub/ShairportQt
+          ref: ${{ inputs.sha || '111822e11901e06db13ab4685313299b8992773b' }}
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.1"
+          arch: win64_msvc2022_64
+
+      - uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-${{ env.TRIPLET }}-shairportqt-v1
+
+      - name: Install dependencies (vcpkg)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install --triplet $env:TRIPLET `
+            openssl spdlog sockpp gtest wintoast "ffmpeg[avcodec,swresample]"
+          if ($LASTEXITCODE) { exit 1 }
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="$env:TRIPLET" `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL 2>&1 | Tee-Object configure.log
+          if ($LASTEXITCODE) { exit 1 }
+          # Without FFmpeg the build silently drops AirPlay 2, which is the whole point of this build.
+          if (-not (Select-String -Quiet "AirPlay 2 support enabled" configure.log)) { Write-Error "AirPlay 2 disabled (FFmpeg not found)"; exit 1 }
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Unit tests
+        run: build\ShairportQtTest.exe
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item build\ShairportQt.exe, LICENSE dist\
+          windeployqt --release --no-translations --dir dist dist\ShairportQt.exe
+          if ($LASTEXITCODE) { exit 1 }
+          # App-local MSVC runtime, in case the PC has no VC++ redistributable.
+          Copy-Item "$env:WINDIR\System32\msvcp140*.dll", "$env:WINDIR\System32\vcruntime140*.dll" dist\
+          "Built from https://github.com/adrientoub/ShairportQt/commit/${{ inputs.sha || '111822e11901e06db13ab4685313299b8992773b' }} (PR 45 of Frank-Friemel/ShairportQt), GPLv3." | Out-File dist\SOURCE.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShairportQt-PR45-win64
+          path: dist/
