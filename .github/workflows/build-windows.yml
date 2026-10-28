@@ -84,7 +84,8 @@ jobs:
           & "$root\bin\uxplay.exe" -h | Select-Object -First 3
           foreach ($e in "appsrc","h264parse","h265parse","avdec_h264","avdec_aac","avdec_alac","aacparse",
                          "videoconvert","audioconvert","audioresample","volume","autovideosink","autoaudiosink",
-                         "d3d11videosink","wasapisink","decodebin","playbin","jpegdec","queue") {
+                         "d3d11videosink","wasapisink","decodebin","playbin","jpegdec","queue",
+                         "level","videoflip","imagefreeze","textoverlay","videoscale","rtph264pay","mp4mux") {
             & "$root\bin\gst-inspect-1.0.exe" --exists $e
             if ($LASTEXITCODE) { Write-Error "missing GStreamer element: $e"; exit 1 }
           }

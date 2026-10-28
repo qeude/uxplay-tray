@@ -10,7 +10,7 @@ plugdir=$prefix/lib/gstreamer-1.0
 # shortcut: plugin whitelist read from UxPlay's renderers; if a new UxPlay uses another element, add its plugin here.
 plugins="coreelements app typefindfunctions playback autodetect videoparsersbad audioparsers libav
   videoconvertscale audioconvert audioresample volume d3d11 d3d12 d3d wasapi directsound jpeg
-  debugutilsbad"
+  debugutilsbad level videofilter imagefreeze pango rtp isomp4"
 
 mkdir -p "$out/bin" "$out/lib/gstreamer-1.0" "$out/libexec/gstreamer-1.0"
 cp "$exe" "$prefix/bin/gst-inspect-1.0.exe" "$out/bin/"
