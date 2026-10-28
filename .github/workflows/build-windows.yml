@@ -5,7 +5,8 @@ on:
     inputs:
       uxplay_ref:
         description: "FDH2/UxPlay branch, tag or commit"
-        default: master
+        # Pinned: patches/ must apply cleanly. Bump deliberately.
+        default: 534e2cc0e558d6c94bcc66964f8fc13ad73a6cdc
   push:
     branches: [main]
     tags: ["v*"]
@@ -40,7 +41,8 @@ jobs:
       - name: Build UxPlay (internal mDNS, no Bonjour)
         run: |
           git clone https://github.com/FDH2/UxPlay.git uxplay-src
-          git -C uxplay-src checkout "${{ inputs.uxplay_ref || 'master' }}"
+          git -C uxplay-src checkout "${{ inputs.uxplay_ref || '534e2cc0e558d6c94bcc66964f8fc13ad73a6cdc' }}"
+          git -C uxplay-src apply ../patches/live-audio-delay.patch
           # No -DUSE_DNS_SD: on Windows this selects UxPlay's own lib/mdnsd instead of Bonjour.
           cmake -S uxplay-src -B uxplay-build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build uxplay-build
@@ -90,7 +92,7 @@ jobs:
             if ($LASTEXITCODE) { Write-Error "missing GStreamer element: $e"; exit 1 }
           }
 
-      - name: Runtime test - UxPlay is discoverable without Bonjour
+      - name: Runtime test - discoverable without Bonjour, live audio delay
         shell: pwsh
         run: |
           if (Get-Service -Name "Bonjour Service" -ErrorAction SilentlyContinue) { Write-Error "Bonjour present on runner, test would be meaningless"; exit 1 }
@@ -99,14 +101,21 @@ jobs:
           $env:GST_PLUGIN_SYSTEM_PATH_1_0 = "$root\lib\gstreamer-1.0"
           $env:GST_PLUGIN_SCANNER_1_0 = "$root\libexec\gstreamer-1.0\gst-plugin-scanner.exe"
           $env:GST_REGISTRY_1_0 = "$env:RUNNER_TEMP\gst-registry.bin"
-          $p = Start-Process "$root\bin\uxplay.exe" -ArgumentList "-n","CITest","-vs","0","-async","-as","fakesink","-d" `
-                 -RedirectStandardOutput uxplay-out.txt -RedirectStandardError uxplay-err.txt -PassThru -NoNewWindow
+          # Launched like the tray does: stdin/stdout piped.
+          $psi = [Diagnostics.ProcessStartInfo]::new("$root\bin\uxplay.exe", "-n CITest -vs 0 -async -as fakesink -d")
+          $psi.UseShellExecute = $false; $psi.RedirectStandardInput = $true
+          $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+          $p = [Diagnostics.Process]::Start($psi)
+          $out = $p.StandardOutput.ReadToEndAsync(); $err = $p.StandardError.ReadToEndAsync()
           Start-Sleep 5
           python -m pip install --quiet zeroconf
           python ci/check_mdns.py CITest
           $rc = $LASTEXITCODE
-          if ($p.HasExited) { Write-Host "uxplay exited early with code $($p.ExitCode)"; $rc = 1 } else { Stop-Process $p.Id }
-          Get-Content uxplay-out.txt, uxplay-err.txt -ErrorAction SilentlyContinue | Select-Object -Last 60
+          if ($p.HasExited) { Write-Host "uxplay exited early with code $($p.ExitCode)"; $rc = 1 }
+          else { $p.StandardInput.WriteLine("delay 120"); $p.StandardInput.Flush(); Start-Sleep 2; $p.Kill(); $p.WaitForExit() }
+          $log = $out.Result + $err.Result
+          $log -split "`n" | Select-Object -Last 60
+          if ($log -notmatch "live audio delay: 120\.0 ms") { Write-Host "live delay command not applied"; $rc = 1 }
           exit $rc
 
       - name: Build installer

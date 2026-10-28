@@ -13,7 +13,8 @@ Pousser ce dossier sur GitHub, puis **Actions → Build Windows → Run workflow
 ## Utiliser
 - L'installeur ajoute une règle de pare-feu (réseaux **privés** uniquement) et lance l'app.
 - Clic droit sur l'icône :
-  - **Décalage du son** : réglage fin si le son du PC n'est pas calé sur l'image de l'iPad (option `-async <ms>`).
+- **Clic gauche** sur l'icône : curseur de décalage du son (-500 à +500 ms), appliqué **en direct** sans couper l'iPad
+  (patch `patches/live-audio-delay.patch` sur UxPlay : commande `delay <ms>` sur l'entrée standard).
   - **Latence minimale** (`-async no`) : pause/changement de piste plus réactifs, mais son plus calé sur l'image de l'iPad.
   - **Lancer au démarrage de Windows**, **Redémarrer**, **Ouvrir le journal**, **Quitter**.
 - Icône verte = UxPlay tourne, grise = arrêté (voir le journal).

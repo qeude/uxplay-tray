@@ -1,0 +1,33 @@
+diff --git a/uxplay.cpp b/uxplay.cpp
+index 942d25c..2e3c9ee 100644
+--- a/uxplay.cpp
++++ b/uxplay.cpp
+@@ -31,6 +31,7 @@
+ #include <fstream>
+ #include <sstream>
+ #include <iostream>
++#include <thread>
+ #include <memory>
+ #include <iterator>
+ #include <sys/stat.h>
+@@ -3434,6 +3435,20 @@ int main (int argc, char *argv[]) {
+     }
+     parse_arguments (argc, argv);
+ 
++    /* UxPlay Tray patch: "delay <ms>" lines on stdin change the audio delay live (no restart, client stays connected). */
++    /* shortcut: unsynchronized 64-bit store, atomic in practice on x86-64/arm64; use std::atomic if upstreamed. */
++    std::thread([] {
++        std::string line;
++        float ms;
++        while (std::getline(std::cin, line)) {
++            if (sscanf(line.c_str(), "delay %f", &ms) == 1 && ms > -1000 && ms < 1000) {
++                audio_delay_alac = audio_delay_aac = (int64_t) (ms * 1000000);  /* nsecs */
++                printf("live audio delay: %.1f ms\n", ms);
++                fflush(stdout);
++            }
++        }
++    }).detach();
++
+ #if !defined(__APPLE__) || !defined(UXPLAY_HAVE_APPLE_P2P)
+     if (peer_to_peer) {
+         fprintf(stderr, "option -p2p requires macOS and the Apple Bonjour DNS-SD backend\n");

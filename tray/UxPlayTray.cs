@@ -11,7 +11,6 @@ static class UxPlayTray
 {
     const string SettingsKey = @"Software\UxPlayTray";
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    static readonly int[] Delays = { -300, -200, -100, -50, 0, 50, 100, 200, 300, 500 };
 
     static string root = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "uxplay");
     static string uxplayExe = Path.Combine(root, @"bin\uxplay.exe");
@@ -21,7 +20,8 @@ static class UxPlayTray
     static Process proc;
     static StreamWriter log;
     static NotifyIcon tray;
-    static ToolStripMenuItem status, delayMenu, noSync, autostart;
+    static ToolStripMenuItem status, noSync, autostart;
+    static Form delayForm;
     static Icon iconOn = MakeIcon(Color.FromArgb(0, 160, 80)), iconOff = MakeIcon(Color.Gray);
 
     [STAThread]
@@ -39,20 +39,10 @@ static class UxPlayTray
             menu.Items.Add(status);
             menu.Items.Add(new ToolStripSeparator());
 
-            delayMenu = new ToolStripMenuItem("Décalage du son");
-            foreach (int d in Delays)
-            {
-                int ms = d;
-                string label = ms == 0 ? "0 ms (par défaut)" : (ms > 0 ? "Retarder le son de " + ms + " ms" : "Avancer le son de " + (-ms) + " ms");
-                var item = new ToolStripMenuItem(label) { Tag = ms };
-                item.Click += delegate { SetSetting("DelayMs", ms); SetSetting("NoSync", 0); Restart(); };
-                delayMenu.DropDownItems.Add(item);
-            }
-            delayMenu.DropDownItems.Add(new ToolStripSeparator());
+            menu.Items.Add("Régler le décalage du son…", null, delegate { ShowDelayWindow(); });
             noSync = new ToolStripMenuItem("Latence minimale, sans synchro avec l'iPad (-async no)");
             noSync.Click += delegate { SetSetting("NoSync", noSync.Checked ? 0 : 1); Restart(); };
-            delayMenu.DropDownItems.Add(noSync);
-            menu.Items.Add(delayMenu);
+            menu.Items.Add(noSync);
 
             menu.Items.Add("Redémarrer UxPlay", null, delegate { Restart(); });
             autostart = new ToolStripMenuItem("Lancer au démarrage de Windows");
@@ -63,6 +53,7 @@ static class UxPlayTray
             menu.Items.Add("Quitter", null, delegate { Stop(); tray.Visible = false; Application.Exit(); });
 
             tray = new NotifyIcon { ContextMenuStrip = menu, Visible = true };
+            tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowDelayWindow(); };
             menu.Opening += delegate { RefreshMenu(); };
 
             // Reflect a crash of uxplay.exe in the icon without needing cross-thread events.
@@ -91,6 +82,7 @@ static class UxPlayTray
         {
             UseShellExecute = false,
             CreateNoWindow = true,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             WorkingDirectory = dataDir,
@@ -154,13 +146,56 @@ static class UxPlayTray
         status.Text = state + " – " + sync;
         tray.Text = state;
         tray.Icon = running ? iconOn : iconOff;
-        foreach (ToolStripItem i in delayMenu.DropDownItems)
-        {
-            var m = i as ToolStripMenuItem;
-            if (m != null && m.Tag is int) m.Checked = !off && (int)m.Tag == delay;
-        }
         noSync.Checked = off;
         using (var k = Registry.CurrentUser.OpenSubKey(RunKey)) autostart.Checked = k != null && k.GetValue("UxPlayTray") != null;
+    }
+
+    // Live fine-tuning: our UxPlay patch reads "delay <ms>" on stdin, so the iPad stays connected.
+    static void ShowDelayWindow()
+    {
+        if (delayForm != null) { delayForm.Activate(); return; }
+        var area = Screen.PrimaryScreen.WorkingArea;
+        delayForm = new Form
+        {
+            Text = "Décalage du son", FormBorderStyle = FormBorderStyle.FixedToolWindow, TopMost = true,
+            StartPosition = FormStartPosition.Manual, ClientSize = new Size(360, 120), ShowInTaskbar = false,
+        };
+        delayForm.Location = new Point(area.Right - delayForm.Width - 12, area.Bottom - delayForm.Height - 12);
+        var label = new Label { Location = new Point(12, 10), AutoSize = true };
+        var bar = new TrackBar
+        {
+            Minimum = -500, Maximum = 500, SmallChange = 10, LargeChange = 50, TickFrequency = 100,
+            Location = new Point(8, 32), Width = 344, AccessibleName = "Décalage du son en millisecondes",
+        };
+        bar.Value = Math.Max(-500, Math.Min(500, GetSetting("DelayMs", 0)));
+        EventHandler update = delegate
+        {
+            label.Text = (bar.Value > 0 ? "Son retardé de " + bar.Value : bar.Value < 0 ? "Son avancé de " + (-bar.Value) : "Aucun décalage, ") + " ms"
+                + (GetSetting("NoSync", 0) == 1 ? "  (inactif en latence minimale)" : "");
+        };
+        bar.ValueChanged += delegate
+        {
+            SetSetting("DelayMs", bar.Value);
+            if (proc != null && !proc.HasExited) { try { proc.StandardInput.WriteLine("delay " + bar.Value); } catch (IOException) { } }
+            update(null, null);
+            RefreshMenu();
+        };
+        Func<string, int, int, Button> button = (text, x, step) =>
+        {
+            var b = new Button { Text = text, Location = new Point(x, 82), Width = 80 };
+            b.Click += delegate { bar.Value = step == 0 ? 0 : Math.Max(-500, Math.Min(500, bar.Value + step)); };
+            delayForm.Controls.Add(b);
+            return b;
+        };
+        button("−10 ms", 12, -10);
+        button("0", 140, 0);
+        button("+10 ms", 268, 10);
+        delayForm.Controls.Add(label);
+        delayForm.Controls.Add(bar);
+        delayForm.FormClosed += delegate { delayForm = null; };
+        update(null, null);
+        delayForm.Show();
+        delayForm.Activate();
     }
 
     static void SetAutostart(bool on)
