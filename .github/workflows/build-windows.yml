@@ -40,7 +40,7 @@ jobs:
 
       - name: Build UxPlay (internal mDNS, no Bonjour)
         run: |
-          git clone https://github.com/FDH2/UxPlay.git uxplay-src
+          git -c core.autocrlf=false clone https://github.com/FDH2/UxPlay.git uxplay-src
           git -C uxplay-src checkout "${{ inputs.uxplay_ref || '534e2cc0e558d6c94bcc66964f8fc13ad73a6cdc' }}"
           git -C uxplay-src apply ../patches/live-audio-delay.patch
           # No -DUSE_DNS_SD: on Windows this selects UxPlay's own lib/mdnsd instead of Bonjour.
